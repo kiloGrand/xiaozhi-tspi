@@ -1,0 +1,7 @@
+# 编译输出目录
+**/build/
+**/build_rk3566/
+
+# 第三方库
+**/third_party/googletest/*
+**/third_party/websocketpp/*
