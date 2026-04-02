@@ -1,0 +1,6 @@
+<RCC>
+    <qresource prefix="/font">
+        <file>SourceHanSansCN-Regular.ttf</file>
+        <file>NotoColorEmoji.ttf</file>
+    </qresource>
+</RCC>

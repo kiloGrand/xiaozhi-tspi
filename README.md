@@ -5,4 +5,10 @@
 
 # 后续计划
 
-gui 为 简易的 CLI 界面，核心功能为通过 UDP IPC 接收 JSON 格式的 UI 数据，解析后在终端输出关键字段信息，后续工作是改成基于QT的界面。
+ - [x] gui 为 简易的 CLI 界面，核心功能为通过 UDP IPC 接收 JSON 格式的 UI 数据，解析后在终端输出关键字段信息，后续工作是改成基于QT的界面。
+
+## qt-gui
+
+这是基于qt的简易gui界面，用Claude开发的，如下图所示：
+
+![QT-GUI](./IMG/image.png)

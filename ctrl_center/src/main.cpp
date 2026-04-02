@@ -21,7 +21,8 @@
 #define AUDIO_PORT_DOWN  5677   /* control_center向sound_app的这个端口下发音频 */
 #define UI_PORT_UP    5678      /* GUI向control_center的这个端口上传UI信息 */
 #define UI_PORT_DOWN  5679      /* control_center向GUI的这个端口下发UI信息 */
-#define CFG_FILE "/home/grand/xiaozhi-desktop/cfg/xiaozhi.cfg"
+// #define CFG_FILE "/home/grand/xiaozhi-desktop/cfg/xiaozhi.cfg"
+#define CFG_FILE "./xiaozhi.cfg"
 
 using json = nlohmann::json;
 static int g_audio_upload_enable = 1;
@@ -70,10 +71,12 @@ static void send_stt(const std::string& text)
     }
 
     try {
-        json j;
-        j["text"] = text;
-        std::string textString = j.dump();
-        g_ipc_ep_ui->send(g_ipc_ep_ui, textString.data(), textString.size());
+        // json j;
+        // j["text"] = text;
+        // std::string textString = j.dump();
+        // g_ipc_ep_ui->send(g_ipc_ep_ui, textString.data(), textString.size());
+        // 直接发送原始text字符串
+        g_ipc_ep_ui->send(g_ipc_ep_ui, text.data(), text.size());
     } catch (const std::exception& e) {
         std::cerr << "Error creating JSON string: " << e.what() << std::endl;
     }
@@ -229,18 +232,22 @@ static void process_other_json(const char *buffer, size_t size)
             } else if (state == "sentence_start") {
                 // 取出"text", 通知GUI
                 // {"type":"tts","state":"sentence_start","text":"1加1等于2啦~","session_id":"eae53ada"}
-                auto text = j["text"];
-                send_stt(text.get<std::string>());
+                // auto text = j["text"];
+                // send_stt(text.get<std::string>());
+                std::string textString = j.dump();
+                send_stt(textString);
                 send_start_listening_req(kListeningModeAutoStop);
                 set_device_state(kDeviceStateSpeaking);
                 send_device_state();
             }
         } else if (j["type"] == "stt") {
             // 表示服务器端识别到了用户语音, 取出"text", 通知GUI
-            auto text = j["text"];
-            send_stt(text.get<std::string>());
+            // auto text = j["text"];
+            // send_stt(text.get<std::string>());
+            std::string textString = j.dump();
+            send_stt(textString);
         } else if (j["type"] == "llm") {
-            // 有"happy"等取值
+            // {"type":"llm","text":"😆","emotion":"laughing","session_id":"5e22d559"}
         /*
             "neutral",
             "happy",
@@ -264,7 +271,8 @@ static void process_other_json(const char *buffer, size_t size)
             "silly",
             "confused"
         */          
-            auto emotion = j["emotion"];
+            std::string textString = j.dump();
+            send_stt(textString);
         } else if (j["type"] == "iot") {
             
         }
