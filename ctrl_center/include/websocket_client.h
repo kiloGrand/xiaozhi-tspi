@@ -5,6 +5,7 @@
 
 // Define the callback function type
 typedef void (*ws_recv_callback_t)(const char *buffer, size_t size);
+typedef void (*ws_close_callback_t)(short close_code);
 
 typedef struct websocket_data_t {
     std::string hostname;
@@ -39,7 +40,7 @@ int websocket_send_text(const char *data, int size) ;
  * @param ws_data WebSocket数据
  * @return 返回值
  */
-int websocket_set_callbacks(ws_recv_callback_t bin_cb, ws_recv_callback_t txt_cb, websocket_data_t *ws_data);
+int websocket_set_callbacks(ws_recv_callback_t bin_cb, ws_recv_callback_t txt_cb, ws_close_callback_t close_cb, websocket_data_t *ws_data);
 
 /**
  * 启动WebSocket线程
@@ -48,4 +49,6 @@ int websocket_set_callbacks(ws_recv_callback_t bin_cb, ws_recv_callback_t txt_cb
  */
 int websocket_start() ;
 
+// 判断WebSocket是否处于连接状态
+bool websocket_is_connected(void);
 #endif

@@ -6,6 +6,7 @@
 
 struct RobotData {
     int state;
+    bool hasState;  // 是否包含state字段
     QString text;
     QString emotion;
     QString wifi;

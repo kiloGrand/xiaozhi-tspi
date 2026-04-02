@@ -322,7 +322,7 @@ int process_opus_data_uploaded(char *buffer, size_t size, void *user_data)
         fprintf(stderr, "Failed to open file %s for writing\n", filename);
     }   
 #endif
-    if (g_audio_upload_enable) {
+    if (g_audio_upload_enable  && websocket_is_connected()) {
         static int cnt = 0;
         if ((cnt++ % 100) == 0)
             std::cout << "Send opus data to server: " << size <<" count: "<< cnt << std::endl;
@@ -331,11 +331,33 @@ int process_opus_data_uploaded(char *buffer, size_t size, void *user_data)
     return 0;
 }
 
+// 接受 GUI->control_center 的数据
 int process_ui_data(char *buffer, size_t size, void *user_data)
 {
+    std::cout << "websocket start, connect ai-xiaozhi" << std::endl;
+    
+    set_device_state(kDeviceStateListening);
+    send_device_state();
+    websocket_start();
     return 0;
 }
 
+static void on_websocket_closed(short close_code)
+{
+    std::cout << "【主程序】连接关闭：code=" << close_code << std::endl;
+
+    // 1. 停止音频上传（解决 invalid state 报错）
+    g_audio_upload_enable = 0;
+
+    // 2. 判断：服务器长时间不说话 → 主动关闭（码 1005）
+    if (close_code == 1005) {
+        std::cout << "【判定】长时间未说话，服务器主动超时关闭连接！" << std::endl;
+    }
+
+    // 3. 更新设备状态
+    set_device_state(kDeviceStateIdle);
+    send_device_state();
+}
 
 /*******************************************************核心逻辑****************************************************************
     sound_app 采集音频（Opus）→ UDP 5676 → control_center → 触发 process_opus_data_uploaded → 调用 websocket_send_binary 上传云端
@@ -460,7 +482,14 @@ int main(int argc, char **argv)
     ws_data.port = "443";
     ws_data.path = "/xiaozhi/v1/";    
 
-    websocket_set_callbacks(process_opus_data_downloaded, process_txt_data_downloaded, &ws_data);
+    websocket_set_callbacks(
+        process_opus_data_downloaded, 
+        process_txt_data_downloaded, 
+        on_websocket_closed,
+        &ws_data);
+    
+    set_device_state(kDeviceStateListening);
+    send_device_state();
     websocket_start();
 
     while (1)

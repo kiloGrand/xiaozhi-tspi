@@ -5,6 +5,7 @@
 #include <QListView>
 #include <QLabel>
 #include <QPushButton>
+#include <QUdpSocket>
 #include "constants.h"
 #include "chatmodel.h"
 #include "ipcworker.h"
@@ -29,6 +30,8 @@ private slots:
 private:
     void setupUI();
     void updateStatusBar();
+    void updateWakeButton();
+    void sendConnectCmd();
 
 private:
     Ui::MainWindow *ui;
@@ -43,6 +46,7 @@ private:
     ChatModel *m_chatModel;
     IPCWorker *m_ipcWorker;
     RobotData m_currentData;
+    QUdpSocket *m_udpSocket;
 };
 
 #endif // MAINWINDOW_H

@@ -94,6 +94,7 @@ MainWindow::MainWindow(QWidget *parent)
     , ui(new Ui::MainWindow)
     , m_chatModel(new ChatModel(this))
     , m_ipcWorker(new IPCWorker(this))
+    , m_udpSocket(new QUdpSocket(this))
 {
     ui->setupUi(this);
 
@@ -111,6 +112,8 @@ MainWindow::MainWindow(QWidget *parent)
     m_currentData.wifi = "0";
     m_currentData.battery = "0";
     m_robotEmoji->setText(DataParser::emotionToEmoji("idle"));
+
+    updateWakeButton();
 }
 
 MainWindow::~MainWindow()
@@ -218,15 +221,24 @@ void MainWindow::onDataReceived(RobotData* data)
 {
     qDebug() << "MainWindow::onDataReceived - type:" << data->msgType << "state:" << data->state << "text:" << data->text << "emotion:" << data->emotion;
 
-    // 保存数据副本
+    // 保存数据副本（只有hasState才更新state）
     QString text = data->text;
     QString msgType = data->msgType;
     QString emotion = data->emotion;
-    m_currentData = *data;
+    if (data->hasState) {
+        m_currentData.state = data->state;
+    }
+    m_currentData.emotion = emotion;
+    m_currentData.wifi = data->wifi;
+    m_currentData.battery = data->battery;
+    m_currentData.msgType = msgType;
     delete data;
 
     // 更新状态栏
     updateStatusBar();
+
+    // 更新唤醒按钮状态
+    updateWakeButton();
 
     // 只有llm类型的消息才更新表情（tts没有emotion字段）
     if (msgType == "llm" && !emotion.isEmpty()) {
@@ -249,9 +261,27 @@ void MainWindow::onDataReceived(RobotData* data)
 void MainWindow::onWakeButtonClicked()
 {
     qDebug() << "点击: 唤醒聊天机器人";
+    sendConnectCmd();
 }
 
 void MainWindow::updateStatusBar()
 {
     m_batteryLabel->setText("电池: " + m_currentData.battery + "%");
+}
+
+void MainWindow::updateWakeButton()
+{
+    int state = m_currentData.state;
+    QString stateText = DataParser::stateToText(state);
+    m_wakeButton->setText(stateText);
+
+    // 只有kDeviceStateIdle状态时可以点击
+    m_wakeButton->setEnabled(state == kDeviceStateIdle);
+}
+
+void MainWindow::sendConnectCmd()
+{
+    QByteArray data = "{\"cmd\":\"connect\"}";
+    m_udpSocket->writeDatagram(data, QHostAddress::LocalHost, UI_PORT_UP);
+    qDebug() << "发送connect命令到" << UI_PORT_UP;
 }

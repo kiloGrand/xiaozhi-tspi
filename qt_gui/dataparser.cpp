@@ -9,6 +9,7 @@ RobotData DataParser::parse(const QString &jsonStr)
 {
     RobotData data;
     data.state = 0;
+    data.hasState = false;
     data.text = "";
     data.emotion = "";
     data.wifi = "0";
@@ -33,6 +34,7 @@ RobotData DataParser::parse(const QString &jsonStr)
 
     if (obj.contains("state") && obj["state"].isDouble()) {
         data.state = obj["state"].toInt();
+        data.hasState = true;
     }
     if (obj.contains("text") && obj["text"].isString()) {
         data.text = obj["text"].toString();
@@ -61,7 +63,7 @@ RobotData DataParser::parse(const QString &jsonStr)
 
 QString DataParser::stateToText(int state)
 {
-    if (state >= 0 && state <= 4) {
+    if (state >= 0 && state <= 9) {
         return STATE_TEXT[state];
     }
     return "未知";

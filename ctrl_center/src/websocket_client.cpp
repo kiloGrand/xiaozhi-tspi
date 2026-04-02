@@ -55,6 +55,7 @@ static websocketpp::connection_hdl g_hdl;
 static websocket_data_t *g_ws_data;
 static ws_recv_callback_t g_ws_recv_bin_cb;
 static ws_recv_callback_t g_ws_recv_txt_cb;
+static ws_close_callback_t g_ws_close_cb = NULL;
 static volatile int g_iHasShaked = 0;
 static volatile int g_iHasConnected = 0;
 /**
@@ -78,7 +79,7 @@ static void on_message(client *c, websocketpp::connection_hdl hdl, client::messa
         return;
     }
     
-    std::cout << "Received: " << payload << std::endl;
+    std::cout << "[on_message] Received: " << payload << std::endl;
     
     try {         
         // 处理json数据:msg->get_payload();
@@ -278,6 +279,12 @@ static void on_close(client *c, websocketpp::connection_hdl hdl) {
                 
     std::cout << "Connection closed. Code: " << con->get_remote_close_code() << ", Reason: " << con->get_remote_close_reason() << "!!" << std::endl;
 
+    // 用户长时间不说话，服务器主动关闭：Connection closed. Code: 1005, Reason: !!
+    if (g_ws_close_cb != NULL) {
+        short code = con->get_remote_close_code();
+        g_ws_close_cb(code);
+    }
+
     // 重新连接逻辑可以在这里实现
     // 例如，等待一段时间后重新启动WebSocket连接
     //std::this_thread::sleep_for(std::chrono::seconds(5)); // 等待5秒后重新连接
@@ -380,7 +387,7 @@ static void *websocket_thread(void *arg) {
          c->stop();
          delete c;
          std::cout<<"exit from websocket_thread"<<std::endl;
-         websocket_start();
+        //  websocket_start();
      } catch (websocketpp::exception const & e) {
          std::cout << "exit hear!" << e.what() << "exit here!!" << std::endl;
      }
@@ -407,7 +414,7 @@ int websocket_send_binary(const char *data, int size) {
             c->send(hdl, data, size, websocketpp::frame::opcode::binary);
         } catch (websocketpp::exception const & e) {
             std::cout << "exit in websocket_send_binary: " << e.what() << std::endl;
-            websocket_connect(c);
+            // websocket_connect(c);
         }
     }
     return 0;
@@ -430,7 +437,7 @@ int websocket_send_text(const char *data, int size) {
             c->send(hdl, data, size, websocketpp::frame::opcode::text);
         } catch (websocketpp::exception const & e) {
             std::cout << "exit in websocket_send_text: " << e.what() << std::endl;
-            websocket_connect(c);
+            // websocket_connect(c);
         }
         g_iHasShaked = 1;
     }
@@ -445,10 +452,16 @@ int websocket_send_text(const char *data, int size) {
  * @param ws_data WebSocket数据
  * @return 返回值
  */
-int websocket_set_callbacks(ws_recv_callback_t bin_cb, ws_recv_callback_t txt_cb, websocket_data_t *ws_data) {
+int websocket_set_callbacks(
+    ws_recv_callback_t bin_cb, 
+    ws_recv_callback_t txt_cb, 
+    ws_close_callback_t close_cb,
+    websocket_data_t *ws_data
+) {
     g_ws_recv_bin_cb = bin_cb;
     g_ws_recv_txt_cb = txt_cb;
     g_ws_data = ws_data;
+    g_ws_close_cb = close_cb; 
     return 0;
 }
 
@@ -466,4 +479,9 @@ int websocket_start() {
     ws_thread.detach();
 
     return 0;
+}
+
+// 判断WebSocket是否处于连接状态
+bool websocket_is_connected(void) {
+    return g_iHasConnected;
 }
