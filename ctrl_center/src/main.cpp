@@ -66,7 +66,7 @@ static void send_device_state(void)
 static void send_stt(const std::string& text)
 {
     if (!g_ipc_ep_ui) {
-        std::cerr << "Error: g_ipc_ep_ui is nullptr" << std::endl;
+        std::cout << "Error: g_ipc_ep_ui is nullptr" << std::endl;
         return;
     }
 
@@ -78,7 +78,7 @@ static void send_stt(const std::string& text)
         // 直接发送原始text字符串
         g_ipc_ep_ui->send(g_ipc_ep_ui, text.data(), text.size());
     } catch (const std::exception& e) {
-        std::cerr << "Error creating JSON string: " << e.what() << std::endl;
+        std::cout << "Error creating JSON string: " << e.what() << std::endl;
     }
 }
 
@@ -335,7 +335,7 @@ int process_opus_data_uploaded(char *buffer, size_t size, void *user_data)
 int process_ui_data(char *buffer, size_t size, void *user_data)
 {
     std::cout << "websocket start, connect ai-xiaozhi" << std::endl;
-    
+
     set_device_state(kDeviceStateListening);
     send_device_state();
     websocket_start();
@@ -378,21 +378,22 @@ int main(int argc, char **argv)
     // 获取无线网卡的 MAC 地址
     std::string mac = get_wireless_mac_address();
     if (mac.empty()) {
-        std::cerr << "Failed to get wireless MAC address" << std::endl;
+        std::cout << "Failed to get wireless MAC address" << std::endl;
         mac = "00:00:00:00:00:00"; // 默认值，可以根据需要修改
     }
+    std::cout << "mac: " << mac << std::endl;
 
     // 读取配置文件中的 UUID
     std::string uuid = read_uuid_from_config(cfg_file);
     if (uuid.empty()) {
-        std::cerr << "UUID not found in " CFG_FILE << std::endl;
+        std::cout << "UUID not found in " CFG_FILE << std::endl;
         // 生成新的 UUID
         uuid = generate_uuid();
         std::cout << "Generated new UUID: " << uuid << std::endl;
 
         // 将新的 UUID 写入配置文件
         if (!write_uuid_to_config(uuid, cfg_file)) {
-            std::cerr << "Failed to write UUID to " CFG_FILE << std::endl;
+            std::cout << "Failed to write UUID to " CFG_FILE << std::endl;
         } else {
             std::cout << "UUID written to " CFG_FILE << std::endl;
         }
@@ -439,9 +440,13 @@ int main(int argc, char **argv)
 
     while (0 != active_device(&http_data, active_code)) {
         if (active_code[0]) {
-            std::string auth_code = "Active-Code: " + std::string(active_code);
+            // 直接构造目标JSON字符串：{"type":"tts","text":"Active-Code: 数字"}
+            std::string auth_code = R"({"type":"tts","text":"Active-Code: )" 
+                                    + std::string(active_code) 
+                                    + R"("})";
             set_device_state(kDeviceStateActivating);
             send_device_state();
+            // 发送给GUI聊天信息框显示
             send_stt(auth_code);
         }
         sleep(5);
@@ -449,7 +454,6 @@ int main(int argc, char **argv)
 
     set_device_state(kDeviceStateIdle);
     send_device_state();
-    send_stt("设备已经激活");
 
     websocket_data_t ws_data;
 
