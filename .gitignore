@@ -5,3 +5,4 @@
 # 第三方库
 **/third_party/googletest/*
 **/third_party/websocketpp/*
+**/third_party/glog/*

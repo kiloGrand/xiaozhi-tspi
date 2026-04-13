@@ -65,8 +65,11 @@ endif()
 # ==============================================================================
 add_executable(my_ctrl_center 
                src/main.cpp              # 程序入口（整合所有业务模块）
-               src/websocket_client.cpp  # WebSocket客户端（核心网络通信）
-               src/ipc_udp.cpp           # UDP进程间通信（IPC）
+               src/xiaozhi_control.cpp
+        #        src/websocket_client.cpp  # WebSocket客户端（核心网络通信）
+               src/ws_client.cpp         # WebSocket客户端（核心网络通信）
+        #        src/ipc_udp.cpp           # UDP进程间通信（IPC）
+               src/udp_endpoint.cpp      # UDP进程间通信（IPC）
                src/http.cpp              # HTTP请求（基于CURL实现）
                src/uuid.cpp)             # UUID生成（唯一标识核心逻辑）
 
@@ -92,7 +95,8 @@ target_link_libraries(my_ctrl_center
                       ${Boost_LIBRARIES} # Boost system库
                       OpenSSL::SSL       # OpenSSL SSL组件（现代目标式链接）
                       OpenSSL::Crypto    # OpenSSL Crypto组件（现代目标式链接）
-                      pthread)           # POSIX线程库（处理网络/IPC异步逻辑）
+                      pthread            # POSIX线程库（处理网络/IPC异步逻辑）
+                      )           
 
 # ==============================================================================
 # 构建测试模块

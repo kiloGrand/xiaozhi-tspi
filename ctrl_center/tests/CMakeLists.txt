@@ -6,7 +6,10 @@ add_executable(run_tests
                ${TEST_SOURCES}
                ${PROJECT_SOURCE_DIR}/src/uuid.cpp  # 链接uuid.cpp
                ${PROJECT_SOURCE_DIR}/src/http.cpp
-               ${PROJECT_SOURCE_DIR}/src/ipc_udp.cpp) 
+               ${PROJECT_SOURCE_DIR}/src/ipc_udp.cpp
+               ${PROJECT_SOURCE_DIR}/src/udp_endpoint.cpp
+               ${PROJECT_SOURCE_DIR}/src/ws_client.cpp         # WebSocket客户端（核心网络通信）
+               ) 
 
 # 3. 指定头文件路径（保留curl头文件依赖）
 target_include_directories(run_tests
@@ -21,7 +24,11 @@ target_link_libraries(run_tests
                       gtest 
                       gtest_main 
                       ${CURL_LIBRARIES}
-                      pthread)
+                      pthread
+                      ${Boost_LIBRARIES} # Boost system库
+                      OpenSSL::SSL       # OpenSSL SSL组件（现代目标式链接）
+                      OpenSSL::Crypto    # OpenSSL Crypto组件（现代目标式链接）
+                      )
 
 # 5. 注册测试
 enable_testing()
