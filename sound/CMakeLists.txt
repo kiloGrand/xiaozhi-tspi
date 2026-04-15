@@ -44,7 +44,13 @@ add_executable(my_sound
                src/record.cpp
                src/aplay.cpp
                src/opus.cpp
-               src/ipc_udp.cpp)
+               src/ipc_udp.cpp
+               src/AlsaAudioBase.cpp
+               src/AlsaCapture.cpp
+               src/AlsaPlayback.cpp
+               src/OpusWrapper.cpp
+               src/udp_endpoint.cpp
+               )
 
 # ==============================================================================
 # 指定主程序头文件搜索路径（解决音频模块头文件引用问题）
@@ -90,3 +96,10 @@ add_subdirectory(tests)
 # 4. 运行指定测试用例（精准调试音频功能）
 #    ./tests/run_tests --gtest_filter=PlayTest.PlayRecordedAudio    # 测试播放录制的音频
 #    ./tests/run_tests --gtest_filter=RecordTest.RecordToFileFor5Seconds  # 测试录制5秒音频到文件
+# 5. GDB 调试程序（定位段错误）
+# gdb ./my_sound
+# # 启动程序
+# run
+# # 按 Ctrl+C 触发退出，程序崩溃后，输入：
+# # 查看崩溃堆栈（这是定位段错误的唯一关键！）
+# bt

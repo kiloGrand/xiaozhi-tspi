@@ -7,6 +7,11 @@ add_executable(run_tests
                ${PROJECT_SOURCE_DIR}/src/record.cpp  # 链接record.cpp
                ${PROJECT_SOURCE_DIR}/src/aplay.cpp
                ${PROJECT_SOURCE_DIR}/src/opus.cpp
+               ${PROJECT_SOURCE_DIR}/src/AlsaAudioBase.cpp
+               ${PROJECT_SOURCE_DIR}/src/AlsaCapture.cpp
+               ${PROJECT_SOURCE_DIR}/src/AlsaPlayback.cpp
+               ${PROJECT_SOURCE_DIR}/src/OpusWrapper.cpp
+               ${PROJECT_SOURCE_DIR}/src/udp_endpoint.cpp
                ) 
 
 # 3. 指定头文件路径（保留curl头文件依赖）

@@ -26,6 +26,7 @@ chmod +x my_control_center
 
  - [x] gui 为 简易的 CLI 界面，核心功能为通过 UDP IPC 接收 JSON 格式的 UI 数据，解析后在终端输出关键字段信息，后续工作是改成基于QT的界面。
  - [x] 基于面向对象重构 ctrl_center
+ - [x] 基于面向对象重构sound_app
 
 ## qt-gui
 
@@ -152,10 +153,96 @@ chmod +x my_control_center
 
 ---
 
-### 4. 重构后架构优势
-1. **模块化解耦**：三大模块职责单一，互不干扰，可独立维护、扩展、替换；
-2. **高可扩展性**：IPC 通信基于抽象基类，可无缝扩展管道、共享内存等通信方式；
-3. **线程安全**：原子变量+智能指针，彻底解决多线程数据竞争问题；
-4. **稳定性极高**：RAII 自动管理资源，杜绝内存泄漏、野指针、段错误；
-5. **可测试性强**：独立模块支持单元测试，无需依赖整个系统；
-6. **现代化规范**：符合现代 C++ 编码标准，降低后续维护成本。
+## 基于面向对象重构sound_app
+
+### 基于alsa的应用开发
+
+教程：
+- [Linux应用开发【第八章】ALSA应用开发 - 知乎-韦东山](https://zhuanlan.zhihu.com/p/443728870)
+- [小白快速入门 Linux alsa 应用编程](https://mp.weixin.qq.com/s/5TSTHWyZ8Ihul8Xv-4UclQ)
+
+|功能|录音 (Capture)|播放 (Playback)|
+|---|---|---|
+|流类型|`SND_PCM_STREAM_CAPTURE`|`SND_PCM_STREAM_PLAYBACK`|
+|数据读写|`snd_pcm_readi`|`snd_pcm_writei`|
+|异常|`Overrun`(-EPIPE)：读太慢|`Underrun`(-EPIPE)：写太慢|
+
+- 无文件头，纯二进制音频数据；
+- 播放时**必须指定采样率 / 声道 / 格式**（代码已自动输出 ffplay 命令）；
+- 例：`ffplay -f s16le -ar 16000 -ac 2 record.pcm`。
+
+### Opus 编解码
+
+|功能|Opus 编码 (PCM → Opus)|Opus 解码 (Opus → PCM)|
+|---|---|---|
+|句柄类型|`OpusEncoder*` / `SpeexResamplerState*`|`OpusDecoder*` / `SpeexResamplerState*`|
+|初始化 API|`speex_resampler_init`<br><br>`opus_encoder_create`|`speex_resampler_init`<br><br>`opus_decoder_create`|
+|参数配置 API|`opus_encoder_ctl` (设置比特率)|无|
+|核心处理 API|`speex_resampler_process_int`<br><br>`opus_encode`|`opus_decode`<br><br>`speex_resampler_process_int`|
+|资源释放 API|`speex_resampler_destroy`<br><br>`opus_encoder_destroy`|`speex_resampler_destroy`<br><br>`opus_decoder_destroy`|
+|异常错误查询|`opus_strerror`|`opus_strerror`|
+
+### 架构
+
+采用**三层分层架构**：
+
+|层级|核心类|职责|
+|---|---|---|
+|业务管理层|Main 主程序 |顶层全流程调度，实现全双工语音对讲；注册信号处理、初始化所有模块、串联**录音→编码→UDP 发送→UDP 接收→解码→播放**闭环，管理程序生命周期|
+|功能模块层|AlsaCapture<br>AlsaPlayback<br>OpusEncoder<br>OpusDecoder<br>UdpEndpoint |单一职责独立模块，无相互依赖；线程化录音 / 播放、Opus 编解码 + 重采样、UDP 音频数据收发，提供标准化功能接口|
+|硬件抽象层|AlsaAudioBase|封装 ALSA PCM 设备通用底层操作，为录音 / 播放子类提供统一硬件支持，实现资源 RAII 管理、参数配置、设备初始化复用|
+
+#### 1. AlsaAudioBase（ALSA 音频基础抽象基类）
+
+封装 ALSA PCM 设备**通用底层操作**，作为录音 / 播放子类的父类，实现代码复用；采用 RAII 智能指针管理设备资源，禁止拷贝、支持移动，避免资源冲突。
+
+- **核心功能**：封装 ALSA PCM 设备打开、硬件参数配置、实际参数读取、资源自动释放等通用逻辑；统一处理录音 / 播放设备的初始化流程。
+- **核心接口**：
+    
+    1. `构造函数`：初始化音频设备名、采样率、声道数、音频格式
+    2. `get_sample_rate()`：获取配置的音频采样率
+    3. `get_channels()`：获取配置的音频声道数
+    4. `get_format()`：获取配置的音频采样格式
+    5. `get_period_frames()`：获取硬件周期帧大小
+    6. `get_actual_settings()`：获取硬件实际生效的音频参数
+    7. `open_pcm_device()`：通用 PCM 设备初始化（录音 / 播放共用核心逻辑）
+    8. `虚析构函数`：保证多态场景下子类资源正确释放
+
+#### 2. AlsaCapture（ALSA 录音子类，继承 AlsaAudioBase）
+
+封装 ALSA 麦克风录音全功能，**线程化采集、线程安全**，纯录音逻辑无额外处理，RAII 自动管理线程与设备资源。
+
+- **核心功能**：实现麦克风 PCM 原始数据采集，独立线程运行；自动处理缓冲区溢出异常，通过回调函数实时输出录音数据；支持线程安全启停。
+- **核心接口**：
+    
+    1. `继承基类构造函数`：复用音频参数初始化逻辑
+    2. `start()`：启动录音线程，绑定录音数据输出回调
+    3. `stop()`：停止录音线程，释放 PCM 设备与缓冲区资源
+    4. `is_running()`：查询录音线程运行状态
+    5. `析构函数`：自动调用 stop，确保资源无泄漏
+
+#### 3. AlsaPlayback（ALSA 播放子类，继承 AlsaAudioBase）
+
+封装 ALSA 扬声器播放全功能，**线程化播放、线程安全**，RAII 自动管理线程与设备资源。
+
+- **核心功能**：实现 PCM 原始音频数据播放，独立线程运行；通过回调获取待播放数据，自动处理播放错误并恢复设备；支持线程安全启停。
+- **核心接口**：
+    
+    1. `继承基类构造函数`：复用音频参数初始化逻辑
+    2. `start()`：启动播放线程，绑定播放数据获取回调
+    3. `stop()`：停止播放线程，释放 PCM 设备与缓冲区资源
+    4. `is_running()`：查询播放线程运行状态
+    5. `析构函数`：自动调用 stop，确保资源无泄漏
+
+#### 4. OpusCodec（Opus 编解码整合类，包含编码器 + 解码器）
+
+独立封装 Opus 编解码、Speex 重采样、通道转换功能，**完全解耦 ALSA 与网络模块**，RAII 管理编解码 / 重采样资源，禁止拷贝、支持移动。
+
+- **核心功能**：实现 PCM ↔ Opus 双向格式转换；支持采样率转换、多声道 / 单声道自动转换；自动管理编码器、解码器、重采样器资源，提供健壮的异常校验。
+- **核心接口**：
+    1. `OpusEncoder 构造`：初始化 Opus 编码器、Speex 重采样器
+    2. `OpusDecoder 构造`：初始化 Opus 解码器、Speex 重采样器
+    3. `isValid()`：校验编解码器是否初始化成功
+    4. `encode()`：PCM 原始数据编码为 Opus 压缩数据
+    5. `decode()`：Opus 压缩数据解码为 PCM 原始数据
+    6. `析构函数`：自动释放编解码、重采样所有资源
