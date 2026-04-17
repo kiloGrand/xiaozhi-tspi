@@ -7,6 +7,7 @@
 #include "ws_client.h"
 #include "udp_endpoint.h"
 #include "http.h"
+#include "json.hpp"
 
 // 常量定义
 #define AUDIO_PORT_UP    5676   /* sound_app向control_center的这个端口上传音频 */
@@ -34,6 +35,8 @@ enum class DeviceState {
     Activating,
     FatalError
 };
+
+using json = nlohmann::json;
 
 class XiaozhiControlCenter {
 public:
@@ -82,6 +85,9 @@ private:
     void send_start_listening_req(ListeningMode mode);
     void process_hello_json(const char* buffer, size_t size);
     void process_other_json(const char* buffer, size_t size);
+
+    // MCP核心功能
+    void handle_mcp_request(const json& mcp_json);
 
 private:
     // 硬件标识

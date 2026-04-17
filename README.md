@@ -26,7 +26,8 @@ chmod +x my_control_center
 
  - [x] gui 为 简易的 CLI 界面，核心功能为通过 UDP IPC 接收 JSON 格式的 UI 数据，解析后在终端输出关键字段信息，后续工作是改成基于QT的界面。
  - [x] 基于面向对象重构 ctrl_center
- - [x] 基于面向对象重构sound_app
+ - [x] 基于面向对象重构 sound_app
+ - [x] 内置 MCP 工具
 
 ## qt-gui
 
@@ -246,3 +247,150 @@ chmod +x my_control_center
     4. `encode()`：PCM 原始数据编码为 Opus 压缩数据
     5. `decode()`：Opus 压缩数据解码为 PCM 原始数据
     6. `析构函数`：自动释放编解码、重采样所有资源
+
+---
+
+## MCP服务器（Model Context Protocol）架构与接口设计
+基于**JSON-RPC 2.0** 实现MCP 2024-11-05标准协议，采用**单例模式+四层模块化架构**，支持工具动态注册、协议解析、工具调用、线程安全运行，适配Linux平台，预留硬件扩展接口。
+
+### 核心依赖
+- nlohmann json：JSON序列化/反序列化、协议报文解析
+- C++11+：lambda表达式、`std::mutex`线程互斥、RAII资源管理
+
+### MCP核心协议方法
+遵循标准MCP协议，仅实现核心必需方法：
+
+| 协议方法 | 功能 |
+|---------|------|
+| `initialize` | MCP连接初始化，协商服务端能力 |
+| `tools/list` | 获取注册的MCP工具列表（支持载荷分页） |
+| `tools/call` | 调用指定MCP业务工具 |
+
+```C++
+// 获取 MCP 单例服务
+McpServer& server = McpServer::GetInstance();
+// 注册内置工具
+server.AddCommonTools();
+
+std::string mcp_response;
+
+// 测试1：调用工具列表
+std::string req_list = R"({"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}})";
+server.ParseMessage(req_list);
+mcp_response = server.GetLastResponse(); // 直接赋值，不重新定义
+std::cout << "MCP执行结果: " << mcp_response << std::endl;
+
+// 测试2：调用计算器工具
+std::string req_calc = R"({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"self.calculator","arguments":{"a":10,"b":20, "operation":"+"}}})";
+server.ParseMessage(req_calc);
+mcp_response = server.GetLastResponse();
+std::cout << "MCP执行结果: " << mcp_response << std::endl;
+```
+
+### 整体架构
+采用**四层模块化架构**，层级解耦、单一职责、线程安全：
+
+| 层级 | 核心类/模块 | 职责 |
+|-----|-----------|------|
+| 参数数据层 | `ReturnValue`/`Property`/`PropertyList` | 封装参数/返回值数据类型，提供类型安全校验、数据转换、JSON生成 |
+| 工具实体层 | `McpTool` | 封装工具元数据、参数、执行回调，实现工具调用与协议序列化 |
+| 业务工具层 | 内置通用工具（计算器/智能家居） | 实现具体业务逻辑，预留硬件扩展接口，标准化返回格式 |
+| 协议服务层 | `McpServer` | MCP核心服务（单例），协议解析、消息路由、工具管理、响应生成 |
+
+### 一、参数数据层（基础数据封装）
+负责MCP工具的**参数定义、返回值封装、类型安全管理**，是整个架构的数据基础。
+
+#### 1. ReturnValue（工具返回值封装类）
+统一封装工具执行结果，支持布尔/整型/浮点/字符串4种标准类型，适配MCP响应格式。
+- **核心功能**：多类型返回值存储、类型判断、数据获取，屏蔽底层类型差异。
+- **核心接口**：
+
+| 接口 | 功能 |
+|-----|------|
+| `ReturnValue(bool/int/float/string)` | 多类型构造函数 |
+| `is_bool()/is_int()/is_float()/is_string()` | 判断返回值类型 |
+| `get_bool()/get_int()/get_float()/get_string()` | 获取对应类型的返回值 |
+
+#### 2. Property（单参数封装类）
+封装MCP工具的单个输入参数，支持类型定义、默认值、数值范围校验。
+- **核心功能**：参数元数据管理、参数合法性校验、协议JSON序列化。
+- **核心接口**：
+
+| 接口 | 功能 |
+|-----|------|
+| `Property(名称, 类型, [默认值/范围])` | 多场景参数构造 |
+| `name()/type()` | 获取参数名称/类型 |
+| `value_bool()/int()/float()/string()` | 获取参数值 |
+| `to_json()` | 序列化为MCP标准参数JSON |
+
+#### 3. PropertyList（参数列表管理类）
+管理工具的所有输入参数，提供参数查找、必填参数校验、整体序列化。
+- **核心功能**：参数集合管理、必填参数提取、JSON格式转换、按键值查找参数。
+- **核心接口**：
+
+| 接口 | 功能 |
+|-----|------|
+| `AddProperty()` | 添加工具参数 |
+| `operator[]` | 按名称快速查找参数 |
+| `GetRequired()` | 获取必填参数名称列表 |
+| `to_json()` | 序列化为工具输入Schema JSON |
+
+### 二、工具实体层（MCP工具封装）
+
+封装单个MCP工具的**完整信息**，是业务逻辑与协议层的核心桥梁。
+- **核心功能**：工具元数据管理、参数解析、执行回调调用、协议响应生成。
+- **核心接口**：
+
+| 接口 | 功能 |
+|-----|------|
+| `McpTool(名称, 描述, 参数列表, 回调)` | 构造工具实例 |
+| `name()/description()/properties()` | 获取工具元数据 |
+| `set_user_only()` | 设置用户专属工具权限 |
+| `to_json()` | 生成工具列表标准JSON |
+| `Call()` | 执行工具回调，生成MCP响应报文 |
+
+### 三、协议服务层（核心调度引擎）
+
+MCP服务**全局唯一入口**，采用**单例模式**，线程安全设计，实现全流程协议调度。
+- **核心功能**：协议报文解析、工具注册管理、请求路由、响应生成、错误处理、工具列表分页。
+- **核心接口**：
+
+| 接口 | 功能 |
+|-----|------|
+| `GetInstance()` | 获取单例实例（全局唯一） |
+| `AddTool/AddUserOnlyTool` | 注册普通/用户专属MCP工具 |
+| `AddCommonTools()` | 注册内置通用业务工具 |
+| `ParseMessage()` | 解析MCP协议报文（核心调用入口） |
+| `GetLastResponse()` | 获取最后一次协议响应结果 |
+| `GetToolsList()` | 生成分页工具列表（8000字节载荷限制） |
+| `DoToolCall()` | 执行具体工具调用逻辑 |
+| `ParseCapabilities()` | 解析客户端能力配置 |
+
+### 四、业务工具层
+
+内置3个标准化工具，**统一返回格式**（`success/msg/result`），预留硬件扩展接口：
+
+| 工具名称 | 功能 | 硬件扩展预留 |
+|---------|------|------------|
+| `self.calculator` | 浮点数四则运算（+/-/*/） | 无 |
+| `self.smart_home.get_temperature_humidity` | 查询室内温湿度 | 替换为真实传感器驱动 |
+| `self.smart_home.control_light` | 灯具开关控制 | 替换为真实硬件控制接口 |
+
+```C++
+AddTool("self.smart_home.get_temperature_humidity",
+    "查询当前室内环境温湿度数据，返回温度和湿度数值。\n"
+    "Args:\n"
+    "  无输入参数。\n"
+    "Return:\n"
+    "  标准化JSON响应，固定包含success、msg、result三个字段，result包含温度、湿度数据。",
+    PropertyList({}),  // 无参数
+    [](const PropertyList& properties) -> ReturnValue {
+        // ====================== 预留硬件扩展接口 ======================
+        // 后续可替换为真实传感器读取：float temp = ReadTemperature(); float humi = ReadHumidity();
+        float temperature = 26.0f;  // 固定温度值
+        float humidity = 30.0f;     // 固定湿度值
+    
+        // 统一返回格式：success + msg + result（result为JSON对象）
+        return "{\"success\": true, \"msg\": \"成功获取室内温湿度\", \"result\": {\"temperature\": 26.0, \"humidity\": 30.0}}";
+    });
+```

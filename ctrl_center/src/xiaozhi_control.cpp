@@ -6,6 +6,7 @@
 #include <cstring>
 #include "json.hpp"
 #include "uuid.h"
+#include "mcp_server.hpp"
 
 using json = nlohmann::json;
 
@@ -19,6 +20,9 @@ XiaozhiControlCenter& XiaozhiControlCenter::instance() {
 XiaozhiControlCenter::XiaozhiControlCenter() {
     init_mac();
     init_uuid();
+    // 初始化MCP服务，注册所有工具
+    McpServer::GetInstance().AddCommonTools();
+    std::cout << "MCP Server 初始化完成" << std::endl;
 }
 
 // 析构函数
@@ -190,6 +194,35 @@ void XiaozhiControlCenter::process_hello_json(const char* buffer, size_t size) {
     audio_upload_enable_ = true;
 }
 
+// ===================== MCP 核心处理函数 =====================
+void XiaozhiControlCenter::handle_mcp_request(const json& mcp_json) {
+    try {
+        // 1. 获取云端下发的MCP JSON-RPC请求
+        std::string mcp_request = mcp_json.dump(-1);
+        std::cout << "收到MCP请求: " << mcp_request << std::endl;
+
+        // 2. 调用MCP服务执行请求
+        McpServer& mcp = McpServer::GetInstance();
+        mcp.ParseMessage(mcp_request);
+
+        // 3. 获取MCP执行结果
+        std::string mcp_response = mcp.GetLastResponse();
+        std::cout << "MCP执行结果: " << mcp_response << std::endl;
+
+        // 4. 封装结果回传云端
+        json resp;
+        resp["session_id"] = session_id_;
+        resp["type"] = "mcp";
+        resp["payload"] = json::parse(mcp_response);
+        std::string message = resp.dump(-1);
+
+        ws_client_->send_text(message.data(), message.size());
+        std::cout << "发送MCP响应到云端: " << message << std::endl;
+    } catch (const std::exception& e) {
+        std::cout << "handle_mcp_request error: " << e.what() << std::endl;
+    }
+}
+
 // ==================== 其他JSON处理 ====================
 void XiaozhiControlCenter::process_other_json(const char* buffer, size_t size) {
     try {
@@ -217,6 +250,8 @@ void XiaozhiControlCenter::process_other_json(const char* buffer, size_t size) {
             }
         } else if (type == "stt" || type == "llm") {
             send_stt(j.dump());
+        } else if (type == "mcp") {
+            handle_mcp_request(j["payload"]);
         }
     } catch (const std::exception& e) {
         std::cout << "process json error: " << e.what() << std::endl;
@@ -294,6 +329,9 @@ void XiaozhiControlCenter::init_websocket() {
             "type": "hello",
             "version": 1,
             "transport": "websocket",
+            "features": {
+                "mcp": true
+            },
             "audio_params": {
                 "format": "opus",
                 "sample_rate": 16000,
