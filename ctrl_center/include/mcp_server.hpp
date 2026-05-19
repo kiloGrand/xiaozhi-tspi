@@ -580,7 +580,7 @@ inline void McpServer::AddCommonTools() {
         });
 }
 
-// 解析能力
+// 解析服务器的能力，如是否可以有识别图像和描述图片的能力
 inline void McpServer::ParseCapabilities(const json& capabilities) {
     // 1. 获取 vision 子对象（对应 cJSON_GetObjectItem）
     if (!capabilities.contains("vision") || !capabilities["vision"].is_object()) {
