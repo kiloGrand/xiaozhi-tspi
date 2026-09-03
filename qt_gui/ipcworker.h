@@ -6,6 +6,7 @@
 #include "constants.h"
 #include "dataparser.h"
 
+class QThread;
 class IPCWorkerPrivate;
 
 class IPCWorker : public QObject
@@ -22,8 +23,10 @@ public:
 signals:
     void dataReceived(RobotData* data);
     void errorOccurred(const QString& msg);
+    void stopRequested();
 
 private:
+    QThread *m_thread;
     IPCWorkerPrivate *m_worker;
 };
 
